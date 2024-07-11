@@ -6,6 +6,7 @@ from scipy.special import betainc
 from itertools import permutations, product
 import pickle
 from Bio import SeqIO
+from general_linear_models import GeneralLinearModel, add_predictions
 
 
 # As long as you have the data files
@@ -77,9 +78,28 @@ class SynonymousRates:
         self.set_motifs_to_fit(on_full=True)
         self.set_model_preferences()
 
+        # Add column 'predicted_count_basel' to the dataframe
+        self.get_basel_predictions()
+
         self.fit_models()
         self.make_rates()
         self.make_scaling_factor()
+
+    def get_basel_predictions(self):
+
+        # Train general linear model
+        gen_lin_model = GeneralLinearModel(type='l_r', training_data=self.mut_by_site_df.copy(), regularization=('l2', 0.1))
+        gen_lin_model.train()
+        self.basel_model = gen_lin_model
+
+        # Add predicted counts to dataframe
+        self.mut_by_site_df = add_predictions(self.mut_by_site_df.copy())
+
+        # Add prediction to all subsets
+        for mut_type in self.mut_types:
+            self.mut_by_site_dfs[mut_type] = add_predictions(self.mut_by_site_dfs[mut_type].copy())
+            self.mut_train_dfs[mut_type] = add_predictions(self.mut_train_dfs[mut_type].copy())
+            self.mut_test_dfs[mut_type] = add_predictions(self.mut_test_dfs[mut_type].copy())
 
     def set_constants(self):
         """
@@ -517,14 +537,36 @@ class SynonymousRates:
             R2s[mut_type] = R2
         return R2s
 
-    def calc_R2_on_full(self):
+    def calc_R2_Basel(self, mut_df):
+        """
+        Returns the R^2 values, per mutation type, for the dataframe mut_df. This
+        dataframe must have columns for mutation type, motif, partition, basepair, and
+        mutation count. The mutation counts of mut_df are taken as the true values and the
+        predicted values are given by multiplying the appropriate prefered rate by the
+        median mutation count in mut_df.
+        """
+
+        R2s = {}
+        for mut_type in mut_df.mut_type.unique():
+            mut_view = mut_df[mut_df.mut_type == mut_type]
+            ybar = mut_view.mut_count.mean()
+            SSres = ((mut_view.mut_count - mut_view.predicted_count_basel) ** 2).sum()
+            SStot = ((mut_view.mut_count - ybar) ** 2).sum()
+            R2 = 1 - SSres / SStot
+            R2s[mut_type] = R2
+        return R2s
+
+    def calc_R2_on_full(self, model):
         """
         Returns the per mutation type R^2 values on the full data (training + test).
         """
         mut_df = self.mut_by_site_df
-        return self.calc_R2(mut_df)
+        if model == 'Seattle':
+            return self.calc_R2(mut_df)
+        elif model == 'Basel':
+            return self.calc_R2_Basel(mut_df)
 
-    def calc_R2_on_train(self):
+    def calc_R2_on_train(self, model):
         """Returns the per mutation type R^2 values on the training data."""
         mut_df = pd.concat(
             [
@@ -533,17 +575,23 @@ class SynonymousRates:
             ],
             ignore_index=True,
         )
-        return self.calc_R2(mut_df)
+        if model == 'Seattle':
+            return self.calc_R2(mut_df)
+        elif model == 'Basel':
+            return self.calc_R2_Basel(mut_df)
 
-    def calc_R2_on_test(self):
+    def calc_R2_on_test(self, model):
         """Returns the per mutation type R^2 values on the test data."""
         mut_df = pd.concat(
             [the_df.reset_index(names="site") for the_df in self.mut_test_dfs.values()],
             ignore_index=True,
         )
-        return self.calc_R2(mut_df) if not mut_df.empty else {}
+        if model == 'Seattle':
+            return self.calc_R2(mut_df) if not mut_df.empty else {}
+        elif model == 'Basel':
+            return self.calc_R2_Basel(mut_df) if not mut_df.empty else {}
 
-    def calc_R2_on_poisson_simulated(self, seed=None):
+    def calc_R2_on_poisson_simulated(self, model, seed=None):
         """
         Returns the per mutation type R^2 values on a simulated data set. The simulated
         data is given by taking the prefered rate for a combination of mutation type,
@@ -557,13 +605,18 @@ class SynonymousRates:
         for mut_type, left, right, partition, basepair in prod:
             motif = f"{left}{mut_type[0]}{right}"
 
-            rate_row = self.all_rates_df[
-                (self.all_rates_df.mut_type == mut_type)
-                & (self.all_rates_df.motif == motif)
-                & (self.all_rates_df.partition == partition)
-                & (self.all_rates_df.basepair == basepair)
-            ]
-            rate = rate_row.prefered_rate
+            if model == 'Seattle':
+                rate_row = self.all_rates_df[
+                    (self.all_rates_df.mut_type == mut_type)
+                    & (self.all_rates_df.motif == motif)
+                    & (self.all_rates_df.partition == partition)
+                    & (self.all_rates_df.basepair == basepair)
+                ]
+                rate = rate_row.prefered_rate
+            elif model == 'Basel':
+                # Get one-hot encoding
+                one_hot = [1, 1-basepair] + self.basel_model.one_hot_l_r(np.array(left), np.array(right))
+                rate = np.exp((self.basel_model.W[mut_type].T@one_hot)[0]) - 0.5
 
             data_df = self.mut_train_dfs[mut_type]
             data_row = data_df[
@@ -582,4 +635,7 @@ class SynonymousRates:
             simulated_data,
             columns=["mut_type", "motif", "partition", "basepair", "mut_count"],
         )
-        return self.calc_R2(mut_df)
+        if model == 'Seattle':
+            return self.calc_R2(mut_df)
+        elif model == 'Basel':
+            return self.calc_R2_Basel(mut_df)
