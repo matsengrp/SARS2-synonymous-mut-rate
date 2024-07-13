@@ -6,7 +6,7 @@ from scipy.special import betainc
 from itertools import permutations, product
 import pickle
 from Bio import SeqIO
-from general_linear_models import GeneralLinearModel, add_predictions
+from basel_model import BaselModel
 
 
 # As long as you have the data files
@@ -66,7 +66,11 @@ class SynonymousRates:
         clip_bottom=False,
         clip_percent=0.02,
         test_holdout=0.0,
+        split_index=None,
+        r2_of_log_counts=True
     ):
+        self.r2_of_log_counts = r2_of_log_counts
+
         self.set_mut_count_path(mut_count_path)
         self.set_constants()
         self.set_model_parameters()
@@ -74,11 +78,11 @@ class SynonymousRates:
 
         self.load_sequence(sequence_path)
         self.load_dataframes(clip_data, clip_bottom, clip_percent)
-        self.train_test_split(test_holdout)
+        self.train_test_split(test_holdout, split_index)
         self.set_motifs_to_fit(on_full=True)
         self.set_model_preferences()
 
-        # Add column 'predicted_count_basel' to the dataframe
+        # Add column 'predicted_count_basel' to all dataframes
         self.get_basel_predictions()
 
         self.fit_models()
@@ -87,19 +91,22 @@ class SynonymousRates:
 
     def get_basel_predictions(self):
 
-        # Train general linear model
-        gen_lin_model = GeneralLinearModel(type='l_r', training_data=self.mut_by_site_df.copy(), regularization=('l2', 0.1))
-        gen_lin_model.train()
-        self.basel_model = gen_lin_model
-
-        # Add predicted counts to dataframe
-        self.mut_by_site_df = add_predictions(self.mut_by_site_df.copy())
-
-        # Add prediction to all subsets
+        # Train model on full data set and add predictions to full dataset
+        general_linear_model = BaselModel()
+        general_linear_model.train(df_train=self.mut_by_site_df.copy())
+        self.mut_by_site_df = general_linear_model.add_predictions(self.mut_by_site_df.copy())
         for mut_type in self.mut_types:
-            self.mut_by_site_dfs[mut_type] = add_predictions(self.mut_by_site_dfs[mut_type].copy())
-            self.mut_train_dfs[mut_type] = add_predictions(self.mut_train_dfs[mut_type].copy())
-            self.mut_test_dfs[mut_type] = add_predictions(self.mut_test_dfs[mut_type].copy())
+            self.mut_by_site_dfs[mut_type] = general_linear_model.add_predictions(self.mut_by_site_dfs[mut_type].copy())
+        self.basel_model_full = general_linear_model
+
+        # Train model on training set and add predictions to both the training and test data
+        training_df = pd.concat([df for df in self.mut_train_dfs.values()])
+        general_linear_model = BaselModel()
+        general_linear_model.train(df_train=training_df.copy())
+        for mut_type in self.mut_types:
+            self.mut_train_dfs[mut_type] = general_linear_model.add_predictions(self.mut_train_dfs[mut_type].copy())
+            self.mut_test_dfs[mut_type] = general_linear_model.add_predictions(self.mut_test_dfs[mut_type].copy())
+        self.basel_model_train = general_linear_model
 
     def set_constants(self):
         """
@@ -267,20 +274,30 @@ class SynonymousRates:
             for mut_type in self.mut_types
         }
 
-    def train_test_split(self, test_holdout):
+    def train_test_split(self, test_holdout, split_index):
         """
         Splits the mutation data into training and testing data. The data is split after
         accounting for mutation type. Specify test_holdout=0 to train on all of the
         data.
         """
-        self.mut_test_dfs = {
-            mut_type: the_df.sample(frac=test_holdout)
-            for mut_type, the_df in self.mut_by_site_dfs.items()
-        }
-        self.mut_train_dfs = {
-            mut_type: the_df.drop(self.mut_test_dfs[mut_type].index)
-            for mut_type, the_df in self.mut_by_site_dfs.items()
-        }
+        if self.site_motif_path == "../results/syn_mut_train_test_splits.csv" and split_index is not None:
+            self.mut_test_dfs = {
+                mut_type: the_df[the_df[f"split_{split_index}"] == "test"]
+                for mut_type, the_df in self.mut_by_site_dfs.items()
+            }
+            self.mut_train_dfs = {
+                mut_type: the_df[the_df[f"split_{split_index}"] == "train"]
+                for mut_type, the_df in self.mut_by_site_dfs.items()
+            }
+        else:
+            self.mut_test_dfs = {
+                mut_type: the_df.sample(frac=test_holdout)
+                for mut_type, the_df in self.mut_by_site_dfs.items()
+            }
+            self.mut_train_dfs = {
+                mut_type: the_df.drop(self.mut_test_dfs[mut_type].index)
+                for mut_type, the_df in self.mut_by_site_dfs.items()
+            }
         return None
 
     def set_model_preferences(self):
@@ -530,28 +547,34 @@ class SynonymousRates:
         R2s = {}
         for mut_type in mutations_df.mut_type.unique():
             mut_view = mutations_df[mutations_df.mut_type == mut_type]
-            ybar = mut_view.mut_count.mean()
-            SSres = ((mut_view.mut_count - mut_view.predicted_mut_count) ** 2).sum()
-            SStot = ((mut_view.mut_count - ybar) ** 2).sum()
+            if self.r2_of_log_counts:
+                mut_log_count = np.log(mut_view.mut_count + 0.5)
+                pred_mut_log_count = np.log(mut_view.predicted_mut_count + 0.5)
+                ybar = mut_log_count.mean()
+                SSres = ((mut_log_count - pred_mut_log_count) ** 2).sum()
+                SStot = ((mut_log_count - ybar) ** 2).sum()
+            else:
+                ybar = mut_view.mut_count.mean()
+                SSres = ((mut_view.mut_count - mut_view.predicted_mut_count) ** 2).sum()
+                SStot = ((mut_view.mut_count - ybar) ** 2).sum()
             R2 = 1 - SSres / SStot
             R2s[mut_type] = R2
         return R2s
 
     def calc_R2_Basel(self, mut_df):
-        """
-        Returns the R^2 values, per mutation type, for the dataframe mut_df. This
-        dataframe must have columns for mutation type, motif, partition, basepair, and
-        mutation count. The mutation counts of mut_df are taken as the true values and the
-        predicted values are given by multiplying the appropriate prefered rate by the
-        median mutation count in mut_df.
-        """
-
         R2s = {}
         for mut_type in mut_df.mut_type.unique():
             mut_view = mut_df[mut_df.mut_type == mut_type]
-            ybar = mut_view.mut_count.mean()
-            SSres = ((mut_view.mut_count - mut_view.predicted_count_basel) ** 2).sum()
-            SStot = ((mut_view.mut_count - ybar) ** 2).sum()
+            if self.r2_of_log_counts:
+                mut_log_count = np.log(mut_view.mut_count + 0.5)
+                pred_mut_log_count = np.log(mut_view.predicted_count_basel + 0.5)
+                ybar = mut_log_count.mean()
+                SSres = ((mut_log_count - pred_mut_log_count) ** 2).sum()
+                SStot = ((mut_log_count - ybar) ** 2).sum()
+            else:
+                ybar = mut_view.mut_count.mean()
+                SSres = ((mut_view.mut_count - mut_view.predicted_count_basel) ** 2).sum()
+                SStot = ((mut_view.mut_count - ybar) ** 2).sum()
             R2 = 1 - SSres / SStot
             R2s[mut_type] = R2
         return R2s
@@ -615,8 +638,8 @@ class SynonymousRates:
                 rate = rate_row.prefered_rate
             elif model == 'Basel':
                 # Get one-hot encoding
-                one_hot = [1, 1-basepair] + self.basel_model.one_hot_l_r(np.array(left), np.array(right))
-                rate = np.exp((self.basel_model.W[mut_type].T@one_hot)[0]) - 0.5
+                one_hot = [1, 1-basepair] + self.basel_model_full.one_hot_l_r(np.array(left), np.array(right))
+                rate = np.exp((self.basel_model_full.W[mut_type].T@one_hot)[0]) - 0.5
 
             data_df = self.mut_train_dfs[mut_type]
             data_row = data_df[
@@ -629,11 +652,15 @@ class SynonymousRates:
             # For Poisson, the mean and median are close.
             samples = rng.poisson(rate, sample_count)
             for sample in samples:
-                simulated_data.append((mut_type, motif, partition, basepair, sample))
+                if model == 'Seattle':
+                    simulated_data.append((mut_type, motif, partition, basepair, sample))
+                elif model == 'Basel':
+                    simulated_data.append((mut_type, motif, partition, basepair, sample, rate))
 
         mut_df = pd.DataFrame(
             simulated_data,
-            columns=["mut_type", "motif", "partition", "basepair", "mut_count"],
+            columns=["mut_type", "motif", "partition", "basepair", "mut_count"] if model == 'Seattle' else
+            ["mut_type","motif", "partition", "basepair", "mut_count", "predicted_count_basel"],
         )
         if model == 'Seattle':
             return self.calc_R2(mut_df)
