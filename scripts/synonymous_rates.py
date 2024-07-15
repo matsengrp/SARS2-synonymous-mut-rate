@@ -638,8 +638,11 @@ class SynonymousRates:
                 rate = rate_row.prefered_rate
             elif model == 'Basel':
                 # Get one-hot encoding
-                one_hot = [1, 1-basepair] + self.basel_model_full.one_hot_l_r(np.array(left), np.array(right))
-                rate = np.exp((self.basel_model_full.W[mut_type].T@one_hot)[0]) - 0.5
+                if mut_type in ['AT', 'CG', 'GC']:
+                    one_hot = [1, 1 - basepair] + self.basel_model_full.one_hot_l_r(np.array(left), np.array(right)) + [partition]
+                else:
+                    one_hot = [1, 1 - basepair] + self.basel_model_full.one_hot_l_r(np.array(left), np.array(right))
+                rate = np.exp((self.basel_model_full.W[mut_type].T @ one_hot)[0]) - 0.5
 
             data_df = self.mut_train_dfs[mut_type]
             data_row = data_df[

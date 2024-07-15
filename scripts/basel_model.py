@@ -12,6 +12,8 @@ plot_map = {'AC': (0, 0), 'CA': (0, 1), 'GA': (0, 2), 'TA': (0, 3),
             'AT': (2, 0), 'CT': (2, 1), 'GT': (2, 2), 'TG': (2, 3)
             }
 
+lightswitch_mutations = ['AT', 'CG', 'GC']
+
 
 class BaselModel:
 
@@ -44,7 +46,7 @@ class BaselModel:
             self.W[nt1+nt2] = w
 
         # Plot observed vs. predicted mean log(counts + 0.5) for every context and pairing state
-        self.plot_fit_vs_data(df_train)
+        # self.plot_fit_vs_data(df_train)
 
     def create_data_matrix(self, mut_counts_df):
 
@@ -56,6 +58,17 @@ class BaselModel:
         # Construct columns of data matrix
         base = np.full(len(unpaired), 1)
         columns = [base] + [unpaired] + self.one_hot_l_r(context_l, context_r)
+
+        # Add information for position in the genome for AT, CG, and GC
+        present_mut_type = mut_counts_df.mut_type.unique()[0]
+        if present_mut_type in lightswitch_mutations:
+            if 'site' in mut_counts_df.columns:
+                before_lightswitch = (mut_counts_df.site < 21555).values
+            elif 'nt_mutation' in mut_counts_df.columns:
+                before_lightswitch = (mut_counts_df['nt_mutation'].apply(lambda x: int(x[1:-1])).values < 21555).astype(int)
+            elif 'partition' in mut_counts_df.columns:
+                before_lightswitch = mut_counts_df['partition'].values
+            columns += [before_lightswitch]
 
         # Compile data matrix
         X = np.column_stack(columns)
@@ -84,20 +97,20 @@ class BaselModel:
 
     def predict_log_counts(self, dataframe):
 
-        # Create data matrix
-        X = self.create_data_matrix(dataframe)
-
         # Prepare array to store predicted log counts
-        predicted_log_counts = np.zeros(X.shape[0])
+        predicted_log_counts = np.zeros(len(dataframe))
 
-        # Predict log counts
+        # Get present mutation types
         if 'nt_mutation' in dataframe.columns:
             present_mut_types = dataframe['nt_mutation'].apply(lambda x: x[0] + x[-1])
         else:
             present_mut_types = dataframe['mut_type']
+
+        # Predict log counts for all mutation types
         for mut_type in present_mut_types.unique():
             indices = np.where(present_mut_types == mut_type)
-            predicted_log_counts[indices] = (X[indices] @ self.W[mut_type]).flatten()
+            X = self.create_data_matrix(dataframe.iloc[indices])
+            predicted_log_counts[indices] = (X @ self.W[mut_type]).flatten()
 
         return predicted_log_counts
 
