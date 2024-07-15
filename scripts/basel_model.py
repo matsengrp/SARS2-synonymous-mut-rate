@@ -42,7 +42,9 @@ class BaselModel:
 
             # Perform least squares regression with l2 regularization
             reg_strength = 0.1
-            w = np.linalg.inv(X.T @ X + reg_strength * np.identity(X.shape[1])) @ X.T @ y
+            reg_mat = reg_strength * np.identity(X.shape[1])
+            reg_mat[0, 0] = 0  # Don't regularize the offset term
+            w = np.linalg.inv(X.T @ X + reg_mat) @ X.T @ y
             self.W[nt1+nt2] = w
 
         # Plot observed vs. predicted mean log(counts + 0.5) for every context and pairing state

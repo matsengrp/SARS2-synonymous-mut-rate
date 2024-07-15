@@ -148,13 +148,20 @@ def compare_basel_vs_seattle_predictions(show_log_counts=True):
         seattle_predictions = rates_df.prefered_rate.values
 
         # Get Basel predictions
-        rates_df = model.basel_model_full.add_predictions(rates_df.copy())
+        rates_df = model.basel_model_full.add_predictions(rates_df.copy()).reset_index(drop=True)
         basel_predictions = rates_df.predicted_count_basel.values
 
         # Plot log counts if desired
         if show_log_counts:
             seattle_predictions = np.log(seattle_predictions)
             basel_predictions = np.log(basel_predictions)
+
+        # List 10 biggest discrepancies
+        diff = seattle_predictions - basel_predictions
+        indices = np.argsort(diff)[-10:]
+        outliers = rates_df.loc[indices, ['motif', 'partition', 'basepair']]
+        print(f'10 biggest discrepancies between Basel and Seattle for {mut_type}:')
+        print(outliers)
 
         # Make scatter plot
         ax.scatter(seattle_predictions, basel_predictions, alpha=0.6, edgecolor='black')
