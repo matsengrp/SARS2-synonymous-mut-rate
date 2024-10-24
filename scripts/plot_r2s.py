@@ -24,30 +24,31 @@ def plot_r2s(out_path):
 
     # Train models on full dataset and get R^2 per mutation type
     full_model = SynonymousRates(test_holdout=0.0, mut_count_path=path)
-    r2_full = {'Basel': full_model.calc_R2_on_full(model='Basel'),
-               'Seattle': full_model.calc_R2_on_full(model='Seattle')}
+    r2_full = {
+        "Basel": full_model.calc_R2_on_full(model="Basel"),
+        "Seattle": full_model.calc_R2_on_full(model="Seattle"),
+    }
 
     # Prepare dictionaries for other metrics
-    r2_simulated = {'Basel': defaultdict(list),
-                    'Seattle': defaultdict(list)}
-    r2_train = {'Basel': defaultdict(list),
-                'Seattle': defaultdict(list)}
-    r2_test = {'Basel': defaultdict(list),
-               'Seattle': defaultdict(list)}
+    r2_simulated = {"Basel": defaultdict(list), "Seattle": defaultdict(list)}
+    r2_train = {"Basel": defaultdict(list), "Seattle": defaultdict(list)}
+    r2_test = {"Basel": defaultdict(list), "Seattle": defaultdict(list)}
 
     # Loop over all train/test splits
     for rep in range(reps):
-        print(f'repetition: {rep}')
+        print(f"repetition: {rep}")
 
         # Calculate R^2 on Poisson simulated data
-        for model_type in ['Basel', 'Seattle']:
-            for mut_type, r2 in full_model.calc_R2_on_poisson_simulated(model=model_type).items():
+        for model_type in ["Basel", "Seattle"]:
+            for mut_type, r2 in full_model.calc_R2_on_poisson_simulated(
+                model=model_type
+            ).items():
                 r2_simulated[model_type][mut_type].append(r2)
 
         # Train models on the current training set
         model = SynonymousRates(split_index=rep, mut_count_path=path)
 
-        for model_type in ['Basel', 'Seattle']:
+        for model_type in ["Basel", "Seattle"]:
 
             # Calculate R^2 on the current training set
             for mut_type, r2 in model.calc_R2_on_train(model=model_type).items():
@@ -58,7 +59,7 @@ def plot_r2s(out_path):
                 r2_test[model_type][mut_type].append(r2)
 
     # Create plot for both models
-    for model_type in ['Basel', 'Seattle']:
+    for model_type in ["Basel", "Seattle"]:
 
         columns = ["mut_type", "R2", "dataset"]
 
@@ -76,10 +77,18 @@ def plot_r2s(out_path):
 
         # Add R^2 on train and test data sets
         rows.extend(
-            [[mut_type, r2, "train"] for mut_type in r2_train[model_type] for r2 in r2_train[model_type][mut_type]]
+            [
+                [mut_type, r2, "train"]
+                for mut_type in r2_train[model_type]
+                for r2 in r2_train[model_type][mut_type]
+            ]
         )
         rows.extend(
-            [[mut_type, r2, "test"] for mut_type in r2_test[model_type] for r2 in r2_test[model_type][mut_type]]
+            [
+                [mut_type, r2, "test"]
+                for mut_type in r2_test[model_type]
+                for r2 in r2_test[model_type][mut_type]
+            ]
         )
 
         # ?
@@ -89,6 +98,7 @@ def plot_r2s(out_path):
         view_others = view_others.sort_values(
             by=["mut_type", "dataset"], ascending=[True, False]
         )
+        view_others.to_csv(f"{model_type}_r2_values.csv")
 
         # Create boxplots
         fig, ax = plt.subplots(figsize=(8, 4.5), dpi=150)
@@ -119,7 +129,7 @@ def plot_r2s(out_path):
 
         ax.set_ylim(-0.25, 1.1)
         ax.set_title(model_type)
-        ax.grid(True, which='both', axis='both')
+        ax.grid(True, which="both", axis="both")
 
         fig.tight_layout()
         file_path = os.path.join(out_path, f"r2s_{model_type}.png")
@@ -148,7 +158,9 @@ def compare_basel_vs_seattle_predictions(show_log_counts=True):
         seattle_predictions = rates_df.prefered_rate.values
 
         # Get Basel predictions
-        rates_df = model.basel_model_full.add_predictions(rates_df.copy()).reset_index(drop=True)
+        rates_df = model.basel_model_full.add_predictions(rates_df.copy()).reset_index(
+            drop=True
+        )
         basel_predictions = rates_df.predicted_count_basel.values
 
         # Plot log counts if desired
@@ -159,12 +171,12 @@ def compare_basel_vs_seattle_predictions(show_log_counts=True):
         # List 10 biggest discrepancies
         diff = seattle_predictions - basel_predictions
         indices = np.argsort(diff)[-10:]
-        outliers = rates_df.loc[indices, ['motif', 'partition', 'basepair']]
-        print(f'10 biggest discrepancies between Basel and Seattle for {mut_type}:')
+        outliers = rates_df.loc[indices, ["motif", "partition", "basepair"]]
+        print(f"10 biggest discrepancies between Basel and Seattle for {mut_type}:")
         print(outliers)
 
         # Make scatter plot
-        ax.scatter(seattle_predictions, basel_predictions, alpha=0.6, edgecolor='black')
+        ax.scatter(seattle_predictions, basel_predictions, alpha=0.6, edgecolor="black")
         ax.set_title(rf"{mut_type[0]}$\rightarrow${mut_type[1]}")
         if plot_map[mut_type][0] == 2:
             ax.set_xlabel("Seattle prediction")
@@ -173,7 +185,7 @@ def compare_basel_vs_seattle_predictions(show_log_counts=True):
         ax.grid(True)
         min_val = min(min(seattle_predictions), min(basel_predictions))
         max_val = max(max(seattle_predictions), max(basel_predictions))
-        ax.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2)
+        ax.plot([min_val, max_val], [min_val, max_val], "r--", lw=2)
 
     plt.tight_layout()
     plt.savefig("../results/basel_vs_seattle.png")
