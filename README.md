@@ -8,6 +8,7 @@ This repository has the code for carying out the analyses in [SARS-CoV-2's mutat
 * `notebooks/` contains Jupyter notebooks used to analyze the data
 * `results/` contains outputs from Jupyter notebooks
 * `environment.yml` encodes the environment used to run the Jupyter notebooks
+* `SARS2-mut-fitness/` is a submodule of the [Bloom and Neher pipeline](https://github.com/jbloomlab/SARS2-mut-fitness) with files that we use as input for our analysis
 
 ### Key results files
 * `results/curated_mut_counts.csv`: is a file with curated site-specific mutational counts. See below for how counts were curated. Key columns include:
