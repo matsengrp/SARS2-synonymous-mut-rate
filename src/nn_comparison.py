@@ -323,7 +323,7 @@ class NNComparison:
 
     def format_tick_label(self, mut_type, test_size):
         """Create a convenient tick label for the mutation type."""
-        return f"{mut_type}\n{test_size}"
+        return f"{mut_type[0]}$\\rightarrow${mut_type[1]}\n{test_size}"
 
     def plot_test_r2_as_boxes(self, r2_df, split_sizes, outpath):
         r2_df = r2_df.copy()

@@ -7,9 +7,8 @@ from scipy import stats
 from itertools import permutations
 
 # Read in mutation counts.
-site_muts_df = pd.read_csv("../results/curated_mut_counts.csv").sort_values(
-    by="nt_site"
-)
+site_muts_df = pd.read_csv("../../figures_basel/data/curated_mut_counts.csv")
+site_muts_df.sort_values(by="nt_site", inplace=True)
 site_muts_df = site_muts_df[site_muts_df.synonymous]
 site_muts_df.reset_index(drop=True, inplace=True)
 site_muts_df.rename(
@@ -38,7 +37,7 @@ def make_cdf_plot(ax, mut_type):
         return -1
 
     ax.set_xlabel("mutation count")
-    title = f"CDFs for {mut_type} ({len(mut_counts)} samples)"
+    title = f"{mut_type[0]}$\\rightarrow${mut_type[1]} ({len(mut_counts)} sites)"
     ax.set_title(title)
 
     # Oberserved counts.
