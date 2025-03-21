@@ -53,7 +53,7 @@ if __name__ == '__main__':
         ax.grid(True)
         if i < 3:
             ax.set_ylabel('coefficient')
-        ax.set_title(f'{mut_type}')
+        ax.set_title(mut_type[0]+r'$\rightarrow$'+mut_type[1]) # ax.set_title(f'{mut_type}')
         ax.legend()
 
         if len(w_pre_omicron) == 9:

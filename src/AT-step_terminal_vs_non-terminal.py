@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from helpers import load_synonymous_muts
 
@@ -50,9 +51,11 @@ if __name__ == '__main__':
     plt.plot(window_positions, medians_terminal / median_terminal, label='terminal branches', color='blue')
     plt.plot(window_positions, medians_non_terminal / median_non_terminal, label='inner branches', color='green')
     # spike protein
+    plt.annotate('S', xy=(21563 + (25383-21563)/2.2, 4.5))
     plt.axvline(21563, linestyle='--', color='black', linewidth=2, alpha=0.7)
     plt.axvline(25383, linestyle='--', color='black', linewidth=2, alpha=0.7)
     # N protein
+    plt.annotate('N', xy=(28274 + (29532-28274)/2.5, 4.5))
     plt.axvline(28274, linestyle='--', color='black', linewidth=2, alpha=0.7)
     plt.axvline(29532, linestyle='--', color='black', linewidth=2, alpha=0.7)
     # orf9b
@@ -64,6 +67,7 @@ if __name__ == '__main__':
     plt.ylabel('Median in sliding window / overall median')
     plt.legend()
     plt.grid(True)
+    sns.despine()
     plt.tight_layout()
     plt.savefig('../results/AT-step_terminal_vs_non-terminal.pdf')
     plt.show()
